@@ -1,13 +1,19 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, History, Zap, Key, Check, AlertCircle } from 'lucide-react';
+import { Sparkles, History, Zap, Key, Check, AlertCircle, Dices, Search, Swords, ShieldAlert, BarChart3, Sun, Moon, Home } from 'lucide-react';
 import SituationPicker from './components/SituationPicker';
 import BelievabilitySelector from './components/BelievabilitySelector';
 import ExcuseResult from './components/ExcuseResult';
 import ConsistencyTracker from './components/ConsistencyTracker';
+import ExcuseRoulette from './components/ExcuseRoulette';
+import ExcuseRater from './components/ExcuseRater';
+import ExcuseBattle from './components/ExcuseBattle';
+import BSDetector from './components/BSDetector';
+import StatsDashboard from './components/StatsDashboard';
+import ExcuseOfTheDay from './components/ExcuseOfTheDay';
 import { generateExcuse } from './utils/gemini';
-import { getApiKey, setApiKey, getExcuseHistory, saveExcuse } from './utils/storage';
-import { SITUATIONS, BELIEVABILITY_LEVELS } from './utils/prompts';
+import { getApiKey, setApiKey, getExcuseHistory, saveExcuse, getTheme, setTheme as setStoredTheme } from './utils/storage';
+import { SITUATIONS, BELIEVABILITY_LEVELS, AUDIENCES, CULTURAL_TONES } from './utils/prompts';
 
 const LOADING_MESSAGES = [
   'Crafting your perfect alibi...',
@@ -20,13 +26,26 @@ const LOADING_MESSAGES = [
   'Polishing your poker face guide...',
 ];
 
+const NAV_ITEMS = [
+  { id: 'generator', label: 'Home', icon: Home },
+  { id: 'tracker', label: 'Tracker', icon: History },
+  { id: 'roulette', label: 'Roulette', icon: Dices },
+  { id: 'rater', label: 'Rater', icon: Search },
+  { id: 'battle', label: 'Battle', icon: Swords },
+  { id: 'detector', label: 'BS', icon: ShieldAlert },
+  { id: 'stats', label: 'Stats', icon: BarChart3 },
+];
+
 function App() {
-  const [view, setView] = useState('generator'); // generator | tracker
-  const [step, setStep] = useState(1); // 1: situation, 2: level, 3: result
+  const [view, setView] = useState('generator');
+  const [step, setStep] = useState(1);
   const [situation, setSituation] = useState(null);
   const [customSituation, setCustomSituation] = useState('');
   const [believability, setBelievability] = useState(null);
+  const [audience, setAudience] = useState('');
+  const [culturalTone, setCulturalTone] = useState('');
   const [result, setResult] = useState(null);
+  const [lastSavedId, setLastSavedId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState('');
@@ -34,10 +53,11 @@ function App() {
   const [apiKey, setApiKeyState] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [theme, setThemeState] = useState('dark');
 
   const DEFAULT_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 
-  // Init — use env key if available, otherwise check localStorage
+  // Init
   useEffect(() => {
     const key = DEFAULT_API_KEY || getApiKey();
     if (key) {
@@ -46,6 +66,11 @@ function App() {
       setHasApiKey(true);
     }
     setHistory(getExcuseHistory());
+
+    // Theme
+    const savedTheme = getTheme();
+    setThemeState(savedTheme);
+    document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
 
   // Loading message rotation
@@ -59,6 +84,12 @@ function App() {
     }, 2000);
     return () => clearInterval(interval);
   }, [loading]);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setThemeState(newTheme);
+    setStoredTheme(newTheme);
+  };
 
   const handleApiKeySubmit = () => {
     if (!apiKeyInput.trim()) return;
@@ -108,10 +139,9 @@ function App() {
 
     try {
       const pastExcuses = getExcuseHistory();
-      const data = await generateExcuse(apiKey, situation, believability, customSituation, pastExcuses);
+      const data = await generateExcuse(apiKey, situation, believability, customSituation, pastExcuses, audience, culturalTone);
       setResult(data);
 
-      // Save to history
       const sitInfo = SITUATIONS.find((s) => s.id === situation);
       const saved = saveExcuse({
         situation,
@@ -121,6 +151,7 @@ function App() {
         backupStory: data.backupStory,
         riskRating: data.riskRating,
       });
+      setLastSavedId(saved.id);
       setHistory(getExcuseHistory());
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
@@ -135,6 +166,7 @@ function App() {
     setCustomSituation('');
     setBelievability(null);
     setResult(null);
+    setLastSavedId(null);
     setStep(1);
     setError('');
   };
@@ -164,23 +196,26 @@ function App() {
             <div className="header-logo-icon">🎭</div>
             <h1>Excuse Engine</h1>
           </div>
-          <nav className="header-nav">
-            <button
-              className={`nav-btn ${view === 'generator' ? 'active' : ''}`}
-              onClick={() => setView('generator')}
-            >
-              <Sparkles size={16} />
-              <span className="nav-label">Generate</span>
+          <div className="header-right">
+            <nav className="header-nav">
+              {NAV_ITEMS.map(item => (
+                <button
+                  key={item.id}
+                  className={`nav-btn ${view === item.id ? 'active' : ''}`}
+                  onClick={() => setView(item.id)}
+                >
+                  <item.icon size={16} />
+                  <span className="nav-label">{item.label}</span>
+                  {item.id === 'tracker' && history.length > 0 && (
+                    <span className="badge">{history.length}</span>
+                  )}
+                </button>
+              ))}
+            </nav>
+            <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button
-              className={`nav-btn ${view === 'tracker' ? 'active' : ''}`}
-              onClick={() => setView('tracker')}
-            >
-              <History size={16} />
-              <span className="nav-label">Tracker</span>
-              {history.length > 0 && <span className="badge">{history.length}</span>}
-            </button>
-          </nav>
+          </div>
         </header>
 
         {/* Main Content */}
@@ -195,10 +230,10 @@ function App() {
               <Key size={40} style={{ color: 'var(--accent-purple)', marginBottom: 16 }} />
               <h3>Set Up Your AI</h3>
               <p>
-                Enter your free Google Gemini API key to power the excuse engine.
+                Enter your free Groq API key to power the excuse engine.
                 <br />
                 <a
-                  href="https://aistudio.google.com/apikey"
+                  href="https://console.groq.com/keys"
                   target="_blank"
                   rel="noopener"
                   style={{ color: 'var(--accent-purple)' }}
@@ -210,7 +245,7 @@ function App() {
                 <input
                   type="password"
                   className="api-key-input"
-                  placeholder="Paste your Gemini API key..."
+                  placeholder="Paste your Groq API key..."
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleApiKeySubmit()}
@@ -221,8 +256,17 @@ function App() {
               </div>
             </motion.div>
           ) : view === 'tracker' ? (
-            /* Consistency Tracker View */
             <ConsistencyTracker history={history} onUpdate={refreshHistory} />
+          ) : view === 'roulette' ? (
+            <ExcuseRoulette apiKey={apiKey} onHistoryUpdate={refreshHistory} />
+          ) : view === 'rater' ? (
+            <ExcuseRater apiKey={apiKey} />
+          ) : view === 'battle' ? (
+            <ExcuseBattle apiKey={apiKey} />
+          ) : view === 'detector' ? (
+            <BSDetector apiKey={apiKey} />
+          ) : view === 'stats' ? (
+            <StatsDashboard history={history} />
           ) : (
             /* Generator View */
             <>
@@ -247,6 +291,9 @@ function App() {
                   </p>
                 </motion.div>
               )}
+
+              {/* Excuse of the Day */}
+              {step === 1 && <ExcuseOfTheDay apiKey={apiKey} />}
 
               {/* Step Indicator */}
               {step <= 3 && (
@@ -294,6 +341,39 @@ function App() {
                       customText={customSituation}
                       onCustomTextChange={setCustomSituation}
                     />
+
+                    {/* Audience Selector */}
+                    <div className="option-selector">
+                      <label className="option-label">👤 Who's it for? <span className="option-optional">(optional)</span></label>
+                      <div className="option-chips">
+                        {AUDIENCES.map(a => (
+                          <button
+                            key={a.id}
+                            className={`option-chip ${audience === a.id ? 'selected' : ''}`}
+                            onClick={() => setAudience(audience === a.id ? '' : a.id)}
+                          >
+                            {a.emoji} {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Cultural Tone Selector */}
+                    <div className="option-selector">
+                      <label className="option-label">🌍 Cultural tone <span className="option-optional">(optional)</span></label>
+                      <div className="option-chips">
+                        {CULTURAL_TONES.map(c => (
+                          <button
+                            key={c.id}
+                            className={`option-chip ${culturalTone === c.id ? 'selected' : ''}`}
+                            onClick={() => setCulturalTone(culturalTone === c.id ? '' : c.id)}
+                          >
+                            {c.emoji} {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="generate-btn-wrapper">
                       <motion.button
                         className="generate-btn"
@@ -378,6 +458,8 @@ function App() {
                       believabilityLevel={believability}
                       onNewExcuse={handleNewExcuse}
                       onRegenerate={handleRegenerate}
+                      excuseId={lastSavedId}
+                      onFavoriteToggle={refreshHistory}
                     />
                   </motion.div>
                 )}
