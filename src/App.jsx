@@ -72,7 +72,6 @@ function App() {
     setThemeState(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
-
   // Loading message rotation
   useEffect(() => {
     if (!loading) return;
@@ -97,12 +96,10 @@ function App() {
     setApiKeyState(apiKeyInput.trim());
     setHasApiKey(true);
   };
-
   const handleSituationSelect = (id) => {
     setSituation(id);
     setError('');
   };
-
   const handleLevelSelect = (id) => {
     setBelievability(id);
     setError('');
